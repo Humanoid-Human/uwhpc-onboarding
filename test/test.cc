@@ -57,13 +57,13 @@ void test_fft() {
 	}
 	std::cout << pass << "/" << NUM_TESTS << " ifft tests passed" << std::endl;
 
-	// test fft
+	// test rfft
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t len = rfft_inps[i].size();
 
 		rfft(rfft_inps[i].data(), res, len);
 		for (std::size_t j = 0; j < len; j++) {
-			if (far_apart(fft_expects[i][j], res[j])) {
+			if (far_apart(rfft_expects[i][j], res[j])) {
 				pass--;
 				std::cout << "[FAIL] (rfft) at " << j << "/" << len
 					<< " expected: " << rfft_expects[i][j]
@@ -72,7 +72,7 @@ void test_fft() {
 			}
 		}
 	}
-	std::cout << pass << "/" << NUM_TESTS << " fft tests passed" << std::endl;
+	std::cout << pass << "/" << NUM_TESTS << " rfft tests passed" << std::endl;
 
 	delete[] res;
 }

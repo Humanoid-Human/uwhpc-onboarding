@@ -1,9 +1,13 @@
 import numpy as np
+from sys import maxsize
 
 NUM_TESTS = 32
 
-def fmt(string):
-    return string.replace("[","{").replace("]","}").replace("(","{").replace(")","}")
+np.set_printoptions(threshold=maxsize, linewidth=120,  suppress=True, floatmode="fixed")
+
+def print_fmt(a):
+    string = np.array2string(a, separator=",")
+    print(string.replace("[","{").replace("]","}").replace("(","{").replace(")","}") + ",")
 
 inp = []
 
@@ -20,13 +24,12 @@ for i in range(NUM_TESTS):
     inp.append(np.zeros(2 ** rng.integers(3, 11), dtype=np.complex128))
     for j in range(len(inp[i])):
         inp[i][j] = complex(rng.uniform(0, 32), rng.uniform(0, 32))
-    print(fmt(str([(z.real, z.imag) for z in inp[i]])) + ",")
+    print_fmt(inp[i])
 print("};\n")
 
 print(f"std::vector<std::complex<double>> fft_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    ans_fmt = [(z.real, z.imag) for z in np.fft.fft(inp[i])]
-    print(fmt(str(ans_fmt)) + ",")
+    print_fmt(np.fft.fft(inp[i]))
 print("};")
 
 inp.clear()
@@ -37,13 +40,12 @@ for i in range(NUM_TESTS):
     inp.append(np.zeros(2 ** rng.integers(3, 11)))
     for j in range(len(inp[i])):
         inp[i][j] = rng.uniform(0, 32)
-    print(fmt(str(list(inp[i]))) + ",")
+    print_fmt(inp[i])
 print("};\n")
 
 print(f"std::vector<std::complex<double>> rfft_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    ans_fmt = [(z.real, z.imag) for z in np.fft.fft(inp[i])]
-    print(fmt(str(ans_fmt)) + ",")
+    print_fmt(np.fft.fft(inp[i]))
 print("};")
 
 inp.clear();
@@ -52,15 +54,11 @@ inp.clear();
 print(f"std::vector<double> transpose_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
     sidelen = 2 ** rng.integers(3, 5)
-    inp.append(np.zeros((sidelen, sidelen), dtype=np.ubyte))
-    for row in inp[i]:
-        for x in row:
-            x = rng.integers(0, 256)
-    print(fmt(str(list(inp[i].flatten()))) + ",")
+    inp.append(rng.random((sidelen, sidelen)))
+    print_fmt(inp[i].flatten())
 print("};")
 
 print(f"std::vector<double> transpose_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    ans = list(np.transpose(inp[i]).flatten())
-    print(fmt(str(ans)) + ",")
+    print_fmt(np.transpose(inp[i]).flatten())
 print("};")

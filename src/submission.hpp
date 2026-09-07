@@ -72,15 +72,15 @@ void transpose(T *m, size_t n, size_t full_n) {
 			#pragma omp task
 			transpose(m + n/2, n/2, full_n);
 			#pragma omp task
-			transpose(m + (n * n / 2), n/2, full_n);
+			transpose(m + (full_n * n/2), n/2, full_n);
 			#pragma omp task
-			transpose(m + (n * n / 2) + (n / 2), n/2, full_n);
+			transpose(m + (full_n * n/2) + (n/2), n/2, full_n);
 		}
 
 		// swap top-right and bottom-left quadrants
 		#pragma omp for
-		for (size_t i = 0; i < (n * n / 2); i += n) {
-			std::swap_ranges(m + (n/2) + i, m + n + i, m + (n * n / 2) + i);
+		for (size_t i = 0; i < (full_n * n / 2); i += full_n) {
+			std::swap_ranges(m + i + (n/2), m + i + n, m + (full_n * n / 2) + i);
 		}
 	}
 	
@@ -90,7 +90,7 @@ template<typename T>
 void transpose(T *m, size_t n) { transpose(m, n, n); }
 
 // super basic rad2 fft
-// not parallelised because it will already be parallelised in the top level
+// not parallelised because it will already be in the 2d fft
 void fft(complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-TAU) {
 	if (n == 1) {
 		*dst = *src;
@@ -118,23 +118,27 @@ void ifft(complex * src, complex * dst, size_t n) {
 	for (size_t i = 0; i < n; i++) { dst[i] /= n; }
 }
 
-// n is half the size of src
 void rfft(double * src, complex * dst, size_t n) {
-	fft((complex *) src, dst, n);
+	fft(reinterpret_cast<complex*>(src), dst, n / 2);
 
-	dst[0] = 0.5 * (dst[0].real() + dst[0].imag());
+	// https://doi.org/10.1016/0022-460X(70)90075-1
+	
+	complex first = dst[0];
+	dst[0] = first.real() + first.imag();
+	dst[n / 2] = first.real() - first.imag();
 
-	complex w = std::polar(1.0, TAU / n);
-	for (size_t i = 1; i < n / 4; i++) {
-		complex a1 = 0.5 * (dst[i] + std::conj(dst[(n/2) - i]));
-		complex a2 = std::pow(w, -i) * complex(0, 0.5) * (std::conj(dst[(n/2)-i]) - dst[i]);
+	complex w = std::polar(1.0, -TAU / n);
+	for (size_t i = 1; i <= n / 4; i++) {
+		complex a1 = 0.5 * (dst[i] + std::conj(dst[n / 2 - i]));
+		complex a2 = complex(0, 0.5) * std::pow(w, i) * (std::conj(dst[n / 2 - i]) - dst[i]);
 
-		dst[i] = 0.5 * (a1 + a2);
-		dst[(n/2) + i] = 0.5 * (a1 - a2);
+		// according to the paper these should be multiplied by 0.5
+		// i have no idea why but that doesn't agree with numpy's algorithm
+		dst[i] = a1 + a2;
+		dst[(n/2) + i] = a1 - a2;
+		dst[n - i] = std::conj(a1 + a2);
+		dst[(n/2) - i] = std::conj(a1 - a2);
 	}
-
-	std::copy_n(dst, n/4, dst + n/4);
-	std::copy_n(dst + (n/2), n/4, dst + (3*n/4));
 }
 
 // n is side len
