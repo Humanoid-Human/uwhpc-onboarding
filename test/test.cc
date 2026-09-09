@@ -11,11 +11,11 @@ void test_rfft2();
 void test_stencil();
 
 int main(void) {
-	//test_fft();
-	//test_ifft();
-	//test_rfft();
-	//test_transpose();
-	//test_rfft2();
+	test_fft();
+	test_ifft();
+	test_rfft();
+	test_transpose();
+	test_rfft2();
 	test_stencil();
 }
 

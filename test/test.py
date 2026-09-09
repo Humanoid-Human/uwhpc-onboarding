@@ -1,7 +1,7 @@
 import numpy as np
 from sys import maxsize
 from math import sqrt
-from scipy import signal
+import scipy
 
 NUM_TESTS = 16
 
@@ -31,7 +31,7 @@ print("};\n")
 
 print(f"std::vector<std::complex<double>> fft_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    print_fmt(np.fft.fft(inp[i]))
+    print_fmt(scipy.fft.fft(inp[i]))
 print("};")
 
 inp.clear()
@@ -47,7 +47,7 @@ print("};\n")
 
 print(f"std::vector<std::complex<double>> rfft_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    print_fmt(np.fft.fft(inp[i]))
+    print_fmt(scipy.fft.fft(inp[i]))
 print("};")
 
 # transpose
@@ -68,7 +68,7 @@ print("};")
 print(f"std::vector<std::complex<double>> rfft2_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
     n = int(sqrt(len(inp[i])))
-    print_fmt(np.fft.fft2(inp[i].reshape((n, n))).flatten())
+    print_fmt(scipy.fft.fft2(inp[i].reshape((n, n))).flatten())
 print("};")
 
 # stencil
@@ -76,7 +76,7 @@ kern = [[0, 1/8, 0], [1/8, 1/2, 1/8], [0, 1/8, 0]]
 print(f"std::vector<double> stencil_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
     n = int(sqrt(len(inp[i])))
-    ans = signal.convolve2d(inp[i].reshape((n, n)), kern, "valid");
+    ans = scipy.signal.convolve2d(inp[i].reshape((n, n)), kern, "valid");
     for j in range(1, n-1):
         for k in range(1, n-1):
             inp[i][j * n + k] = ans[j-1][k-1]

@@ -8,10 +8,36 @@ using std::size_t, std::vector;
 using complex = std::complex<double>;
 
 const double TAU = 6.283185307179586;
-const double stencil[9] = {
-	0,     0.125, 0,
-	0.125, 0.5,   0.125,
-    0,     0.125, 0};
+
+template <typename T>
+class PaddedArr {
+	T *arr;
+	size_t n;
+
+	PaddedArr(std::vector<T> v): arr{v.data()}, n{v.size()} {}
+	PaddedArr(T *arr, size_t n): arr{arr}, n{n} {}
+
+	T operator[](size_t i) {
+		if (i < n) { return arr[i]; }
+		return 0;
+	}
+};
+
+// assumes cols >= rows
+template <typename T>
+class PaddedGrid {
+	T *data;
+	size_t rows;
+	size_t cols;
+
+	PaddedGrid(T * data, size_t rows, size_t cols):
+		data{data}, rows{rows}, cols{cols} {}
+
+	T operator[](size_t i) {
+		if (i / cols >= rows) { return 0; }
+		return data[i];
+	}
+};
 
 class Grid {
 	size_t rows_;
@@ -198,6 +224,7 @@ void fft_stencil(double * src, size_t n) {
 	auto res = new complex[n * n];
 	auto src_fft = new complex[n * n];
 
+	// fill in the stencil
 	std::fill_n(padded, n * n, 0);
 	padded[1] = 0.125;
 	padded[n] = 0.125;
@@ -208,24 +235,28 @@ void fft_stencil(double * src, size_t n) {
 	rfft2(padded, res, n);
 	rfft2(src, src_fft, n);
 
-	#pragma omp parallel for
-	for (size_t i = 0; i < n * n; i++) {
-		src_fft[i] *= res[i];
-	}
+	#pragma omp parallel
+	{
+		#pragma omp for
+		for (size_t i = 0; i < n * n; i++) {
+			src_fft[i] *= res[i];
+		}
 
-	// reuse res
-	ifft2(src_fft, res, n);
+		// reuse res
+		#pragma omp single
+		ifft2(src_fft, res, n);
+		
+		#pragma omp for
+		for (size_t i = 0; i < n * n; i++) {
+			padded[i] = res[i].real();
+		}
+
+		#pragma omp for
+		for (size_t i = 1; i < n - 1; i++) {
+			std::copy_n(padded + (i * n) + 1, n - 2, src + (i * n) + 1);
+		}
+	}
 	
-	#pragma omp parallel for
-	for (size_t i = 0; i < n * n; i++) {
-		padded[i] = res[i].real();
-	}
-
-	#pragma omp parallel for
-	for (size_t i = 1; i < n - 1; i++) {
-		std::copy_n(padded + (i * n) + 1, n - 2, src + (i * n) + 1);
-	}
-
 	delete [] padded;
 	delete [] res;
 	delete [] src_fft;
