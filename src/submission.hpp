@@ -167,6 +167,70 @@ void rfft2(double * src, complex * dst, size_t n) {
 	delete [] scratch;
 }
 
+void ifft2(complex * src, complex * dst, size_t n) {
+	complex * scratch = new complex[n * n];
+
+	#pragma omp parallel
+	{
+		#pragma omp for
+		for (size_t i = 0; i < n * n; i += n) {
+			ifft(src + i, scratch + i, n);
+		}
+
+		#pragma omp single
+		transpose(scratch, n);
+
+		#pragma omp for
+		for (size_t i = 0; i < n * n; i += n) {
+			ifft(scratch + i, dst + i, n);
+		}
+		
+		#pragma omp single
+		transpose(dst, n);
+	}
+
+	delete [] scratch;
+}
+
+// TODO: don't allocate so much memory
+void fft_stencil(double * src, size_t n) {
+	auto padded = new double[n * n];
+	auto res = new complex[n * n];
+	auto src_fft = new complex[n * n];
+
+	std::fill_n(padded, n * n, 0);
+	padded[1] = 0.125;
+	padded[n] = 0.125;
+	padded[n+1] = 0.5;
+	padded[n+2] = 0.125;
+	padded[2 * n + 1] = 0.125;
+
+	rfft2(padded, res, n);
+	rfft2(src, src_fft, n);
+
+	#pragma omp parallel for
+	for (size_t i = 0; i < n * n; i++) {
+		src_fft[i] *= res[i];
+	}
+
+	// reuse res
+	ifft2(src_fft, res, n);
+	
+	#pragma omp parallel for
+	for (size_t i = 0; i < n * n; i++) {
+		padded[i] = res[i].real();
+	}
+
+	#pragma omp parallel for
+	for (size_t i = 1; i < n - 1; i++) {
+		std::copy_n(padded + (i * n) + 1, n - 2, src + (i * n) + 1);
+	}
+
+	delete [] padded;
+	delete [] res;
+	delete [] src_fft;
+}
+
 void apply_stencil(const Grid& old_grid, Grid& new_grid) {
 	const size_t rows = old_grid.rows_;
 	const size_t cols = old_grid.cols_;

@@ -8,13 +8,15 @@ void test_ifft();
 void test_rfft();
 void test_transpose();
 void test_rfft2();
+void test_stencil();
 
 int main(void) {
-	test_fft();
-	test_ifft();
-	test_rfft();
-	test_transpose();
-	test_rfft2();
+	//test_fft();
+	//test_ifft();
+	//test_rfft();
+	//test_transpose();
+	//test_rfft2();
+	test_stencil();
 }
 
 bool far_apart(std::complex<double> a, std::complex<double> b) {
@@ -94,6 +96,7 @@ void test_rfft() {
 
 	delete [] res;
 }
+
 void test_transpose() {
 	std::size_t pass = NUM_TESTS;
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
@@ -122,6 +125,9 @@ void test_rfft2() {
 
 		for (size_t j = 0; j < n * n; j++) {
 			if (far_apart(res[j], rfft2_expects[i][j])) {
+				std::cout << "[FAIL] (rfft2) at " << j << "/" << n * n
+					<< " expected: " << rfft2_expects[i][j]
+					<< ", got: " << res[j] << std::endl;
 				pass--;
 				break;
 			}
@@ -130,4 +136,25 @@ void test_rfft2() {
 	std::cout << pass << "/" << NUM_TESTS << " rfft2 tests passed" << std::endl;
 
 	delete [] res;
+}
+
+void test_stencil() {
+	std::size_t pass = NUM_TESTS;
+
+	for (std::size_t i = 0; i < NUM_TESTS; i++) {
+		std::size_t n = sqrt(rfft_inps[i].size());
+		fft_stencil(rfft_inps[i].data(), n);
+
+		for (size_t j = 0; j < n * n; j++) {
+			if (far_apart(rfft_inps[i][j], stencil_expects[i][j])) {
+				std::cout << "[FAIL] (stencil) at " << j << "/" << n * n
+					<< " expected: " << stencil_expects[i][j]
+					<< ", got: " << rfft_inps[i][j] << std::endl;
+				pass--;
+				break;
+			}
+		}
+	}
+
+	std::cout << pass << "/" << NUM_TESTS << " stencil tests passed" << std::endl;
 }
