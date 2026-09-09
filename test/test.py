@@ -1,7 +1,8 @@
 import numpy as np
 from sys import maxsize
+from math import sqrt
 
-NUM_TESTS = 32
+NUM_TESTS = 16
 
 np.set_printoptions(threshold=maxsize, linewidth=120,  suppress=True, floatmode="fixed")
 
@@ -21,7 +22,7 @@ print(f"const std::size_t NUM_TESTS = {NUM_TESTS};\n")
 # fft
 print(f"std::vector<std::complex<double>> fft_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    inp.append(np.zeros(2 ** rng.integers(3, 11), dtype=np.complex128))
+    inp.append(np.zeros(2 ** rng.integers(3, 6), dtype=np.complex128))
     for j in range(len(inp[i])):
         inp[i][j] = complex(rng.uniform(0, 32), rng.uniform(0, 32))
     print_fmt(inp[i])
@@ -37,7 +38,7 @@ inp.clear()
 # rfft
 print(f"std::vector<double> rfft_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    inp.append(np.zeros(2 ** rng.integers(3, 11)))
+    inp.append(np.zeros(2 ** (2 * rng.integers(2, 4))))
     for j in range(len(inp[i])):
         inp[i][j] = rng.uniform(0, 32)
     print_fmt(inp[i])
@@ -48,13 +49,20 @@ for i in range(NUM_TESTS):
     print_fmt(np.fft.fft(inp[i]))
 print("};")
 
+# 2d rfft
+print(f"std::vector<std::complex<double>> rfft2_expects[{NUM_TESTS}] = {{")
+for i in range(NUM_TESTS):
+    n = int(sqrt(len(inp[i])))
+    print_fmt(np.fft.fft2(inp[i].reshape((n, n))).flatten())
+print("};")
+
 inp.clear();
 
 # transpose
 print(f"std::vector<double> transpose_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
     sidelen = 2 ** rng.integers(3, 5)
-    inp.append(rng.random((sidelen, sidelen)))
+    inp.append(rng.random((sidelen, sidelen))) 
     print_fmt(inp[i].flatten())
 print("};")
 

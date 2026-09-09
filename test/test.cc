@@ -4,11 +4,17 @@
 #include "test.hpp"
 
 void test_fft();
+void test_ifft();
+void test_rfft();
 void test_transpose();
+void test_rfft2();
 
 int main(void) {
 	test_fft();
+	test_ifft();
+	test_rfft();
 	test_transpose();
+	test_rfft2();
 }
 
 bool far_apart(std::complex<double> a, std::complex<double> b) {
@@ -38,7 +44,12 @@ void test_fft() {
 	}
 	std::cout << pass << "/" << NUM_TESTS << " fft tests passed" << std::endl;
 
-	pass = NUM_TESTS;
+	delete[] res;
+}
+
+void test_ifft() {
+	std::size_t pass = NUM_TESTS;
+	auto res = new std::complex<double>[1024];
 	
 	// test ifft
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
@@ -57,6 +68,13 @@ void test_fft() {
 	}
 	std::cout << pass << "/" << NUM_TESTS << " ifft tests passed" << std::endl;
 
+	delete [] res;
+}
+
+void test_rfft() {
+	std::size_t pass = NUM_TESTS;
+	auto res = new std::complex<double>[1024];
+
 	// test rfft
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t len = rfft_inps[i].size();
@@ -74,9 +92,8 @@ void test_fft() {
 	}
 	std::cout << pass << "/" << NUM_TESTS << " rfft tests passed" << std::endl;
 
-	delete[] res;
+	delete [] res;
 }
-
 void test_transpose() {
 	std::size_t pass = NUM_TESTS;
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
@@ -93,4 +110,24 @@ void test_transpose() {
 		}
 	}
 	std::cout << pass << "/" << NUM_TESTS << " transpose tests passed" << std::endl;
+}
+
+void test_rfft2() {
+	std::size_t pass = NUM_TESTS;
+	auto res = new std::complex<double>[256];
+
+	for (std::size_t i = 0; i < NUM_TESTS; i++) {
+		std::size_t n = sqrt(rfft_inps[i].size());
+		rfft2(rfft_inps[i].data(), res, n);
+
+		for (size_t j = 0; j < n * n; j++) {
+			if (far_apart(res[j], rfft2_expects[i][j])) {
+				pass--;
+				break;
+			}
+		}
+	}
+	std::cout << pass << "/" << NUM_TESTS << " rfft2 tests passed" << std::endl;
+
+	delete [] res;
 }

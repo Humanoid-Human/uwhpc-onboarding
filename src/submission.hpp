@@ -142,7 +142,7 @@ void rfft(double * src, complex * dst, size_t n) {
 }
 
 // n is side len
-void rfft2d(double * src, complex * dst, size_t n) {
+void rfft2(double * src, complex * dst, size_t n) {
 	complex * scratch = new complex[n * n];
 
 	#pragma omp parallel
