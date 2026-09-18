@@ -118,10 +118,11 @@ void test_transpose() {
 void test_rfft2() {
 	std::size_t pass = NUM_TESTS;
 	auto res = new std::complex<double>[256];
+	auto scratch = new std::complex<double>[4 * 256];
 
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t n = sqrt(rfft_inps[i].size());
-		rfft2(rfft_inps[i].data(), res, n);
+		rfft2(rfft_inps[i].data(), res, n, scratch);
 
 		for (size_t j = 0; j < n * n; j++) {
 			if (far_apart(res[j], rfft2_expects[i][j])) {
@@ -140,10 +141,11 @@ void test_rfft2() {
 
 void test_stencil() {
 	std::size_t pass = NUM_TESTS;
+	auto res = new double[256];
 
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t n = sqrt(rfft_inps[i].size());
-		fft_stencil(rfft_inps[i].data(), n);
+		fft_stencil(rfft_inps[i].data(), res, n);
 
 		for (size_t j = 0; j < n * n; j++) {
 			if (far_apart(rfft_inps[i][j], stencil_expects[i][j])) {

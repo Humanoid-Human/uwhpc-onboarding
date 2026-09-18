@@ -3,25 +3,12 @@
 #include <vector>
 #include <algorithm>
 #include <complex>
+#include <iostream>
 
 using std::size_t, std::vector;
 using complex = std::complex<double>;
 
 const double TAU = 6.283185307179586;
-
-template <typename T>
-class PaddedArr {
-	T *arr;
-	size_t n;
-
-	PaddedArr(std::vector<T> v): arr{v.data()}, n{v.size()} {}
-	PaddedArr(T *arr, size_t n): arr{arr}, n{n} {}
-
-	T operator[](size_t i) {
-		if (i < n) { return arr[i]; }
-		return 0;
-	}
-};
 
 // assumes cols >= rows
 template <typename T>
@@ -109,7 +96,6 @@ void transpose(T *m, size_t n, size_t full_n) {
 			std::swap_ranges(m + i + (n/2), m + i + n, m + (full_n * n / 2) + i);
 		}
 	}
-	
 }
 
 template<typename T>
@@ -159,7 +145,7 @@ void rfft(double * src, complex * dst, size_t n) {
 		complex a2 = complex(0, 0.5) * std::pow(w, i) * (std::conj(dst[n / 2 - i]) - dst[i]);
 
 		// according to the paper these should be multiplied by 0.5
-		// i have no idea why but that doesn't agree with numpy's algorithm
+		// i have no idea why but that doesn't agree with scipy's algorithm
 		dst[i] = a1 + a2;
 		dst[(n/2) + i] = a1 - a2;
 		dst[n - i] = std::conj(a1 + a2);
@@ -168,9 +154,7 @@ void rfft(double * src, complex * dst, size_t n) {
 }
 
 // n is side len
-void rfft2(double * src, complex * dst, size_t n) {
-	complex * scratch = new complex[n * n];
-
+void rfft2(double * src, complex * dst, size_t n, complex * scratch) {
 	#pragma omp parallel
 	{
 		#pragma omp for
@@ -189,13 +173,9 @@ void rfft2(double * src, complex * dst, size_t n) {
 		#pragma omp single
 		transpose(dst, n);
 	}
-
-	delete [] scratch;
 }
 
-void ifft2(complex * src, complex * dst, size_t n) {
-	complex * scratch = new complex[n * n];
-
+void ifft2(complex * src, complex * dst, size_t n, complex * scratch) {
 	#pragma omp parallel
 	{
 		#pragma omp for
@@ -214,15 +194,14 @@ void ifft2(complex * src, complex * dst, size_t n) {
 		#pragma omp single
 		transpose(dst, n);
 	}
-
-	delete [] scratch;
 }
 
 // TODO: don't allocate so much memory
-void fft_stencil(double * src, size_t n) {
-	auto padded = new double[n * n];
-	auto res = new complex[n * n];
-	auto src_fft = new complex[n * n];
+void fft_stencil(double * src, double * dst, size_t n) {
+	auto res = new complex[4 * n * n];
+	auto scratch = new complex[4 * n * n];
+	auto src_fft = new complex[4 * n * n];
+	auto padded = new double[4 * n * n];
 
 	// fill in the stencil
 	std::fill_n(padded, n * n, 0);
@@ -232,8 +211,14 @@ void fft_stencil(double * src, size_t n) {
 	padded[n+2] = 0.125;
 	padded[2 * n + 1] = 0.125;
 
-	rfft2(padded, res, n);
-	rfft2(src, src_fft, n);
+	rfft2(padded, res, 2 * n, scratch);
+
+	std::fill_n(padded, n * n, 0);
+	for (size_t i = 0; i < n; i++) {
+		std::copy_n(&src[i * n * 2], n, &padded[i * n * 2]);
+	}
+
+	rfft2(padded, src_fft, 2 * n, scratch);
 
 	#pragma omp parallel
 	{
@@ -242,9 +227,8 @@ void fft_stencil(double * src, size_t n) {
 			src_fft[i] *= res[i];
 		}
 
-		// reuse res
 		#pragma omp single
-		ifft2(src_fft, res, n);
+		ifft2(src_fft, res, 2 * n, scratch);
 		
 		#pragma omp for
 		for (size_t i = 0; i < n * n; i++) {
@@ -253,13 +237,23 @@ void fft_stencil(double * src, size_t n) {
 
 		#pragma omp for
 		for (size_t i = 1; i < n - 1; i++) {
-			std::copy_n(padded + (i * n) + 1, n - 2, src + (i * n) + 1);
+			std::copy_n(padded + (2 * i * n) + 1, n - 2, dst + (i * n) + 1);
+		}
+
+		#pragma omp for
+		for (size_t i = 1; i < n - 1; i++) {
+			dst[i*n] = src[i*n];
+			dst[(i+1) * n - 1] = src[(i+1) * n - 1];
 		}
 	}
+
+	std::copy_n(src, n, dst);
+	std::copy_n(src + n * (n-1), n, dst + n * (n-1));
 	
 	delete [] padded;
 	delete [] res;
 	delete [] src_fft;
+	delete [] scratch;
 }
 
 void apply_stencil(const Grid& old_grid, Grid& new_grid) {
