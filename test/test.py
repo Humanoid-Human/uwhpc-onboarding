@@ -5,7 +5,12 @@ import scipy
 
 NUM_TESTS = 20
 
-np.set_printoptions(threshold=maxsize, linewidth=120,  suppress=True, floatmode="fixed")
+def print_cmplx(z):
+    return f"({z.real}, {z.imag})"
+
+formatter = { 'complex_kind': print_cmplx }
+
+np.set_printoptions(formatter=formatter, threshold=maxsize, linewidth=120, suppress=True, floatmode="fixed")
 
 def print_fmt(a):
     string = np.array2string(a, separator=",")
@@ -23,7 +28,7 @@ print(f"const std::size_t NUM_TESTS = {NUM_TESTS};\n")
 # fft
 print(f"std::vector<std::complex<double>> fft_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    inp.append(np.zeros(2 ** rng.integers(3, 6), dtype=np.complex128))
+    inp.append(np.zeros(2 ** rng.integers(1, 6), dtype=np.complex128))
     for j in range(len(inp[i])):
         inp[i][j] = complex(rng.uniform(0, 32), rng.uniform(0, 32))
     print_fmt(inp[i])
@@ -52,19 +57,21 @@ print("};")
 
 # transpose
 t_inp = []
-print(f"std::vector<double> transpose_inps[{NUM_TESTS}] = {{")
+print(f"std::vector<std::complex<double>> transpose_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    sidelen = 2 ** rng.integers(3, 5)
-    t_inp.append(rng.random((sidelen, sidelen))) 
-    print_fmt(t_inp[i].flatten())
+    t_inp.append(np.zeros(2 ** (2 * rng.integers(1, 5)), dtype=np.complex128))
+    for j in range(len(t_inp[i])):
+        t_inp[i][j] = complex(rng.uniform(0, 32), rng.uniform(0, 32))
+    print_fmt(t_inp[i])
 print("};")
 
-print(f"std::vector<double> transpose_expects[{NUM_TESTS}] = {{")
+print(f"std::vector<std::complex<double>> transpose_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    print_fmt(np.transpose(t_inp[i]).flatten())
+    n = int(sqrt(len(t_inp[i])))
+    print_fmt(np.transpose(t_inp[i].reshape(n, n)).flatten())
 print("};")
 
-# 2d rfft
+# rfft2 & ifft2
 print(f"std::vector<std::complex<double>> rfft2_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
     n = int(sqrt(len(inp[i])))

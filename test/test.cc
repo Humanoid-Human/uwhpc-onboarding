@@ -3,6 +3,8 @@
 #include "../src/submission.hpp"
 #include "test.hpp"
 
+using complex = std::complex<double>;
+
 void test_fft();
 void test_ifft();
 void test_rfft();
@@ -21,7 +23,7 @@ int main(void) {
 	test_stencil();
 }
 
-bool far_apart(std::complex<double> a, std::complex<double> b) {
+bool far_apart(complex a, complex b) {
 	const double DELTA_SQ = 0.001;
 	auto d = a - b;
 	return (d.real() * d.real()) > DELTA_SQ || (d.imag() * d.imag()) > DELTA_SQ;
@@ -29,7 +31,7 @@ bool far_apart(std::complex<double> a, std::complex<double> b) {
 
 void test_fft() {
 	std::size_t pass = NUM_TESTS;
-	auto res = new std::complex<double>[1024];
+	auto res = new complex[1024];
 
 	// test fft
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
@@ -39,7 +41,7 @@ void test_fft() {
 		for (std::size_t j = 0; j < len; j++) {
 			if (far_apart(fft_expects[i][j], res[j])) {
 				pass--;
-				std::cout << "[FAIL] (fft) at index " << j << " (len " << len
+				std::cout << "[FAIL] (fft " << i << ") at index " << j << " (len " << len
 					<< ") expected: " << fft_expects[i][j]
 					<< ", got: " << res[j] << std::endl;
 				break;
@@ -53,18 +55,18 @@ void test_fft() {
 
 void test_ifft() {
 	std::size_t pass = NUM_TESTS;
-	auto res = new std::complex<double>[1024];
+	auto res = new complex[1024];
 	
 	// test ifft
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t len = fft_inps[i].size();
-
 		ifft(fft_expects[i].data(), res, len);
+
 		for (std::size_t j = 0; j < len; j++) {
-			if (far_apart(fft_inps[i][j], res[j])) {
+			if (far_apart(fft_inps[i][j], res[j] / (double) len)) {
 				pass--;
-				std::cout << "[FAIL] (ifft) at index " << j << " (len " << len
-					<< ") expected: " << fft_inps[i][j]
+				std::cout << "[FAIL] (ifft " << i << ") at index " << j << " (len " << len
+					<< ") expected: " << rfft_inps[i][j]
 					<< ", got: " << res[j] << std::endl;
 				break;
 			}
@@ -77,7 +79,7 @@ void test_ifft() {
 
 void test_rfft() {
 	std::size_t pass = NUM_TESTS;
-	auto res = new std::complex<double>[1024];
+	auto res = new complex[1024];
 
 	// test rfft
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
@@ -87,7 +89,7 @@ void test_rfft() {
 		for (std::size_t j = 0; j < len; j++) {
 			if (far_apart(rfft_expects[i][j], res[j])) {
 				pass--;
-				std::cout << "[FAIL] (rfft) at index " << j << " (len " << len
+				std::cout << "[FAIL] (rfft " << i << ") at index " << j << " (len " << len
 					<< ") expected: " << rfft_expects[i][j]
 					<< ", got: " << res[j] << std::endl;
 				break;
@@ -104,10 +106,10 @@ void test_transpose() {
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t len = transpose_inps[i].size();
 		transpose(transpose_inps[i].data(), sqrt(len));
-		for (std::size_t j = 0; j < NUM_TESTS; j++) {
+		for (std::size_t j = 0; j < len; j++) {
 			if (transpose_inps[i][j] != transpose_expects[i][j]) {
 				pass--;
-				std::cout << "[FAIL] (transpose) at index " << j << " (len " << len
+				std::cout << "[FAIL] (transpose " << i << ") at index " << j << " (len " << len
 					<< ") expected: " << transpose_expects[i][j]
 					<< ", got: " << transpose_inps[i][j] << std::endl;
 				break;
@@ -119,8 +121,8 @@ void test_transpose() {
 
 void test_rfft2() {
 	std::size_t pass = NUM_TESTS;
-	auto res = new std::complex<double>[256];
-	auto scratch = new std::complex<double>[4 * 256];
+	auto res = new complex[256];
+	auto scratch = new complex[256];
 
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t n = sqrt(rfft_inps[i].size());
@@ -128,7 +130,7 @@ void test_rfft2() {
 
 		for (size_t j = 0; j < n * n; j++) {
 			if (far_apart(res[j], rfft2_expects[i][j])) {
-				std::cout << "[FAIL] (rfft2) at index " << j << " (len " << n * n
+				std::cout << "[FAIL] (rfft2 " << i << ") at index " << j << " (len " << n * n
 					<< ") expected: " << rfft2_expects[i][j]
 					<< ", got: " << res[j] << std::endl;
 				pass--;
@@ -144,18 +146,18 @@ void test_rfft2() {
 
 void test_ifft2() {
 	std::size_t pass = NUM_TESTS;
-	auto res = new std::complex<double>[256];
-	auto scratch = new std::complex<double>[4 * 256];
+	auto res = new complex[256];
+	auto scratch = new complex[256];
 	
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
-		std::size_t n = sqrt(rfft_expects[i].size());
-		ifft2(rfft_expects[i].data(), res, n, scratch);
+		std::size_t n = sqrt(rfft2_expects[i].size());
 
+		ifft2(rfft2_expects[i].data(), res, n, scratch);
 		for (size_t j = 0; j < n * n; j++) {
-			if (far_apart(res[j].real(), rfft_inps[i][j])) {
-				std::cout << "[FAIL] (ifft2) at index " << j << " (len " << n * n
+			if (far_apart(rfft_inps[i][j], res[j])) {
+				std::cout << "[FAIL] (ifft2 " << i << ") at index " << j << " (len " << n * n
 					<< ") expected: " << rfft_inps[i][j]
-					<< ", got: " << res[j].real() << std::endl;
+					<< ", got: " << res[j] << std::endl;
 				pass--;
 				break;
 			}
@@ -176,10 +178,10 @@ void test_stencil() {
 		fft_stencil(rfft_inps[i].data(), res, n);
 
 		for (size_t j = 0; j < n * n; j++) {
-			if (far_apart(rfft_inps[i][j], stencil_expects[i][j])) {
-				std::cout << "[FAIL] (stencil) at index " << j << " (len " << n * n
+			if (far_apart(res[j], stencil_expects[i][j])) {
+				std::cout << "[FAIL] (stencil " << i << ") at index " << j << " (len " << n * n
 					<< ") expected: " << stencil_expects[i][j]
-					<< ", got: " << rfft_inps[i][j] << std::endl;
+					<< ", got: " << res[j] << std::endl;
 				pass--;
 				break;
 			}
