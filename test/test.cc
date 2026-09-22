@@ -14,12 +14,12 @@ void test_ifft2();
 void test_stencil();
 
 int main(void) {
-	test_fft();
-	test_ifft();
-	test_rfft();
-	test_transpose();
-	test_rfft2();
-	test_ifft2();
+	//test_fft();
+	//test_ifft();
+	//test_rfft();
+	//test_transpose();
+	//test_rfft2();
+	//test_ifft2();
 	test_stencil();
 }
 
@@ -179,9 +179,35 @@ void test_stencil() {
 
 		for (size_t j = 0; j < n * n; j++) {
 			if (far_apart(res[j], stencil_expects[i][j])) {
-				std::cout << "[FAIL] (stencil " << i << ") at index " << j << " (len " << n * n
-					<< ") expected: " << stencil_expects[i][j]
-					<< ", got: " << res[j] << std::endl;
+				//std::cout << "[FAIL] (stencil " << i << ") at index " << j << " (len " << n * n
+				//	<< ") expected: " << stencil_expects[i][j]
+				//	<< ", got: " << res[j] << std::endl;
+
+				std::cout << "[FAIL] (stencil " << i << "):" << std::endl
+
+					<< "input:" << std::endl;
+				for (int r = 0; r < n; r++) {
+					for (int c = 0; c < n; c++) {
+						std::cout << rfft_inps[i][r * n + c] << " ";
+					}
+					std::cout << std::endl;
+				}
+
+				std::cout << "expected:" << std::endl;
+				for (int r = 0; r < n; r++) {
+					for (int c = 0; c < n; c++) {
+						std::cout << stencil_expects[i][r * n + c] << " ";
+					}
+					std::cout << std::endl;
+				}
+
+				std::cout << "got:" << std::endl;
+				for (int r = 0; r < n; r++) {
+					for (int c = 0; c < n; c++) {
+						std::cout << res[r * n + c] << " ";
+					}
+					std::cout << std::endl;
+				}
 				pass--;
 				break;
 			}

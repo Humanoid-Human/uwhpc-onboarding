@@ -199,24 +199,24 @@ void ifft2(complex * src, complex * dst, size_t n, complex * scratch) {
 }
 
 // TODO: don't allocate so much memory
+// - fake padding thing (per-row instead of whole thing?)
 // - store it in the Grid itself so it can be reused?
 void fft_stencil(double * src, double * dst, size_t n) {
-	auto res = new complex[4 * n * n];
+	auto kern_fft = new complex[4 * n * n];
 	auto scratch = new complex[4 * n * n];
 	auto src_fft = new complex[4 * n * n];
 	auto padded = new double[4 * n * n];
 
-	// fill in the stencil
-	std::fill_n(padded, n * n, 0);
+	// fill in the kernel
+	std::fill_n(padded, 4 * n * n, 0);
+	padded[0] = 0.5;
 	padded[1] = 0.125;
-	padded[n] = 0.125;
-	padded[n+1] = 0.5;
-	padded[n+2] = 0.125;
-	padded[2 * n + 1] = 0.125;
+	padded[2*n - 1] = 0.125;
+	padded[2*n] = 0.125;
+	padded[(2 * n) * (2 * n - 1)] = 0.125;
 
-	rfft2(padded, res, 2 * n, scratch);
+	rfft2(padded, kern_fft, 2 * n, scratch);
 
-	std::fill_n(padded, n * n, 0);
 	for (size_t i = 0; i < n; i++) {
 		std::copy_n(src + (i*n), n, padded + (i*n*2));
 	}
@@ -226,21 +226,23 @@ void fft_stencil(double * src, double * dst, size_t n) {
 	//#pragma omp parallel
 	{
 		//#pragma omp for
-		for (size_t i = 0; i < n * n; i++) {
-			src_fft[i] *= res[i];
+		for (size_t i = 0; i < 4 * n * n; i++) {
+			src_fft[i] *= kern_fft[i];
 		}
 
+		// reuse kern_fft
 		//#pragma omp single
-		ifft2(src_fft, res, 2 * n, scratch);
+		ifft2(src_fft, kern_fft, 2 * n, scratch);
 		
 		//#pragma omp for
 		for (size_t row = 1; row < n-1; row++) {
 			//#pragma omp simd
 			for (size_t col = 1; col < n-1; col++) {
-				dst[n * row + col] = res[2 * n * row + col].real();	
+				dst[n * row + col] = kern_fft[2 * n * row + col].real();
 			}
 		}
 
+		// sides
 		//#pragma omp for
 		for (size_t i = 1; i < n - 1; i++) {
 			dst[i*n] = src[i*n];
@@ -248,11 +250,12 @@ void fft_stencil(double * src, double * dst, size_t n) {
 		}
 	}
 
+	// top and bottom
 	std::copy_n(src, n, dst);
 	std::copy_n(src + n * (n-1), n, dst + n * (n-1));
 	
 	delete [] padded;
-	delete [] res;
+	delete [] kern_fft;
 	delete [] src_fft;
 	delete [] scratch;
 }
