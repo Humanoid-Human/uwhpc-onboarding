@@ -3,7 +3,7 @@ from sys import maxsize
 from math import sqrt
 import scipy
 
-NUM_TESTS = 16
+NUM_TESTS = 20
 
 np.set_printoptions(threshold=maxsize, linewidth=120,  suppress=True, floatmode="fixed")
 

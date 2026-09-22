@@ -3,7 +3,6 @@
 #include <vector>
 #include <algorithm>
 #include <complex>
-#include <iostream>
 
 using std::size_t, std::vector;
 using complex = std::complex<double>;
@@ -177,7 +176,10 @@ void rfft2(double * src, complex * dst, size_t n, complex * scratch) {
 
 void ifft2(complex * src, complex * dst, size_t n, complex * scratch) {
 	#pragma omp parallel
-	{
+	{		
+		#pragma omp single
+		transpose(dst, n);
+
 		#pragma omp for
 		for (size_t i = 0; i < n * n; i += n) {
 			ifft(src + i, scratch + i, n);
@@ -190,9 +192,6 @@ void ifft2(complex * src, complex * dst, size_t n, complex * scratch) {
 		for (size_t i = 0; i < n * n; i += n) {
 			ifft(scratch + i, dst + i, n);
 		}
-		
-		#pragma omp single
-		transpose(dst, n);
 	}
 }
 
@@ -215,7 +214,7 @@ void fft_stencil(double * src, double * dst, size_t n) {
 
 	std::fill_n(padded, n * n, 0);
 	for (size_t i = 0; i < n; i++) {
-		std::copy_n(&src[i * n * 2], n, &padded[i * n * 2]);
+		std::copy_n(src + (i*n), n, padded + (i*n*2));
 	}
 
 	rfft2(padded, src_fft, 2 * n, scratch);
@@ -231,13 +230,11 @@ void fft_stencil(double * src, double * dst, size_t n) {
 		ifft2(src_fft, res, 2 * n, scratch);
 		
 		#pragma omp for
-		for (size_t i = 0; i < n * n; i++) {
-			padded[i] = res[i].real();
-		}
-
-		#pragma omp for
-		for (size_t i = 1; i < n - 1; i++) {
-			std::copy_n(padded + (2 * i * n) + 1, n - 2, dst + (i * n) + 1);
+		for (size_t row = 1; row < n-1; row++) {
+			#pragma omp simd
+			for (size_t col = 1; col < n-1; col++) {
+				dst[n * row + col] = res[2 * n * row + col].real();	
+			}
 		}
 
 		#pragma omp for
