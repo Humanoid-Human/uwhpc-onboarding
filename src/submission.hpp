@@ -1,72 +1,63 @@
 #pragma once
 
-#include <vector>
 #include <algorithm>
 #include <complex>
-#include <iostream>
+#include <climits>
 
-using std::size_t, std::vector;
+using std::size_t;
 using complex = std::complex<double>;
 
 const double TAU = 6.283185307179586;
 
-// assumes cols >= rows
-template <typename T>
-class PaddedGrid {
-	T *data;
+class Grid {
 	size_t rows;
 	size_t cols;
+	size_t pad_n;
 
-	PaddedGrid(T * data, size_t rows, size_t cols):
-		data{data}, rows{rows}, cols{cols} {}
-
-	T operator[](size_t i) {
-		if (i / cols >= rows) { return 0; }
-		return data[i];
-	}
-};
-
-class Grid {
-	size_t rows_;
-	size_t cols_;
-	vector<double> data;
+	double * data;
+	double * kernel;
+	complex * scratch1;
+	complex * scratch2;
 
 	public:
-	Grid(size_t rows, size_t cols):
-		rows_{rows}, cols_{cols}, data{vector<double>(rows * cols, 0)} {}
+	Grid(size_t r, size_t c): rows{r}, cols{c} {
+		// padding for fft (next power of 2)
+		pad_n = (r < c ? c : r)--;
+		for (size_t shift = 1; shift < sizeof(size_t) * CHAR_BIT; shift *= 2) {
+			pad_n |= pad_n >> shift;
+		}
+		pad_n++;
 
-	inline double& operator()(size_t i, size_t j) { return data[i * cols_ + j]; }
-	inline double operator()(size_t i, size_t j) const { return data[i * cols_ + j]; }
+		size_t data_size = pad_n * pad_n;
+		data = new double[data_size];
+
+		// scratch arrays & kernel, so main thing doesnt have to allocate
+		// TODO: find a way to not allocate so much memory?
+		scratch1 = new complex[data_size];
+		scratch2 = new complex[data_size];
+
+		kernel = new double[data_size];
+		std::fill_n(kernel, data_size, 0);
+		kernel[0] = 0.5;
+		kernel[1] = 0.125;
+		kernel[pad_n - 1] = 0.125;
+		kernel[pad_n] = 0.125;
+		kernel[pad_n * (pad_n - 1)] = 0.125;
+	}
+
+	~Grid() {
+		delete [] data;
+		delete [] scratch1;
+		delete [] scratch2;
+		delete [] kernel;
+	}
+
+	inline double& operator()(size_t i, size_t j) { return data[i * pad_n + j]; }
+	inline double operator()(size_t i, size_t j) const { return data[i * pad_n + j]; }
 
 	friend void apply_stencil(const Grid& old_grid, Grid& new_grid);
 };
 
-void boring_stencil(const vector<double>& old_data, vector<double>& new_data, size_t rows, size_t cols) {
-	// copy top and bottom row
-	std::copy_n(&old_data[0], cols, &new_data[0]);
-	std::copy_n(&old_data[(rows - 1) * cols], cols,
-				&new_data[(rows - 1) * cols]);
-
-	//#pragma omp parallel for
-	for (size_t r = 1; r < rows - 1; r++) {
-		// copy ends
-		new_data[r * cols] = old_data[r * cols];
-		new_data[(r+1) * cols - 1] = old_data[(r+1) * cols - 1];
-
-		// apply stencil
-		//#pragma omp simd
-		for (size_t i = r * cols + 1; i < (r+1) * cols - 1; i++) {
-			const double u = old_data[i + cols];
-			const double d = old_data[i - cols];
-			const double l = old_data[i - 1];
-			const double r = old_data[i + 1];
-			new_data[i] = 0.5 * old_data[i] + 0.125 * (u + d + l + r);
-		}
-	}
-}
-
-// only works on square grids
-// n represents side length
 void transpose(complex *m, size_t n, size_t full_n) {
 	// base case
 	if (n == 2) {
@@ -76,23 +67,23 @@ void transpose(complex *m, size_t n, size_t full_n) {
 		return;
 	}
 
-	//#pragma omp parallel
+	#pragma omp parallel
 	{
 		// transpose four quadrants
-		//#pragma omp single
+		#pragma omp single
 		{
-			//#pragma omp task
+			#pragma omp task
 			transpose(m, n/2, full_n);
-			//#pragma omp task
+			#pragma omp task
 			transpose(m + n/2, n/2, full_n);
-			//#pragma omp task
+			#pragma omp task
 			transpose(m + (full_n * n/2), n/2, full_n);
-			//#pragma omp task
+			#pragma omp task
 			transpose(m + (full_n * n/2) + (n/2), n/2, full_n);
 		}
 
 		// swap top-right and bottom-left quadrants
-		//#pragma omp for
+		#pragma omp for
 		for (size_t i = 0; i < (full_n * n / 2); i += full_n) {
 			std::swap_ranges(m + i + (n/2), m + i + n, m + (full_n * n / 2) + i);
 		}
@@ -101,9 +92,8 @@ void transpose(complex *m, size_t n, size_t full_n) {
 
 void transpose(complex *m, size_t n) { transpose(m, n, n); }
 
-// super basic rad2 fft
 // not parallelised because it will already be in the 2d fft
-void fft(complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-TAU) {
+void fft(const complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-TAU) {
 	if (n == 1) {
 		*dst = *src;
 		return;
@@ -114,7 +104,7 @@ void fft(complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-TA
 
 	complex w = std::polar(1.0, expnt / n);
 
-	//#pragma omp simd
+	#pragma omp simd
 	for (size_t i = 0; i < n / 2; i++) {
 		complex p = dst[i];
 		complex k = dst[i + (n/2)] * std::pow(w, i);
@@ -123,12 +113,10 @@ void fft(complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-TA
 	}
 }
 
-void ifft(complex * src, complex * dst, size_t n) {
-	fft(src, dst, n, 1, TAU);
-}
+void ifft(const complex * src, complex * dst, size_t n) { fft(src, dst, n, 1, TAU); }
 
-void rfft(double * src, complex * dst, size_t n) {
-	fft(reinterpret_cast<complex*>(src), dst, n / 2);
+void rfft(const double * src, complex * dst, size_t n) {
+	fft(reinterpret_cast<const complex *>(src), dst, n / 2);
 
 	// https://doi.org/10.1016/0022-460X(70)90075-1
 	
@@ -151,129 +139,101 @@ void rfft(double * src, complex * dst, size_t n) {
 }
 
 // n is side len
-void rfft2(double * src, complex * dst, size_t n, complex * scratch) {
-	//#pragma omp parallel
+void rfft2(const double * src, complex * dst, size_t n, complex * scratch) {
+	#pragma omp parallel
 	{
-		//#pragma omp for
+		#pragma omp for
 		for (size_t row = 0; row < n; row++) {
 			rfft(src + (row * n), scratch + (row * n), n);
 		}
 
-		//#pragma omp single
+		#pragma omp single
 		transpose(scratch, n);
 
-		//#pragma omp for
+		#pragma omp for
 		for (size_t row = 0; row < n; row++) {
 			fft(scratch + (row * n), dst + (row * n), n);
 		}
 		
-		//#pragma omp single
+		#pragma omp single
 		transpose(dst, n);
 	}
 }
 
-void ifft2(complex * src, complex * dst, size_t n, complex * scratch) {
-	//#pragma omp parallel
+void ifft2(const complex * src, complex * dst, size_t n, complex * scratch) {
+	#pragma omp parallel
 	{
-		//#pragma omp for
+		#pragma omp for
 		for (size_t row = 0; row < n; row++) {
 			ifft(src + (row * n), scratch + (row * n), n);
 		}
 
-		//#pragma omp single
+		#pragma omp single
 		transpose(scratch, n);
 
-		//#pragma omp for
+		#pragma omp for
 		for (size_t row = 0; row < n; row++) {
 			ifft(scratch + (row * n), dst + (row * n), n);
 		}
 
-		//#pragma omp single
+		#pragma omp single
 		transpose(dst, n);
 
-		//#pragma omp for
+		#pragma omp for
 		for (size_t i = 0; i < n * n; i++) {
 			dst[i] /= n * n;
 		}
 	}
 }
 
-// TODO: don't allocate so much memory
-// - fake padding thing (per-row instead of whole thing?)
-// - store it in the Grid itself so it can be reused?
-void fft_stencil(double * src, double * dst, size_t n) {
-	auto kern_fft = new complex[4 * n * n];
-	auto scratch = new complex[4 * n * n];
-	auto src_fft = new complex[4 * n * n];
-	auto padded = new double[4 * n * n];
+// TODO:
+// - try fake padding thing (per-row instead of whole thing?)
+// - some way to use less memory in grids? rn they have 4 scratch bufs where only 3 are needed
+// in-place fft works but probly slower
 
-	// fill in the kernel
-	std::fill_n(padded, 4 * n * n, 0);
-	padded[0] = 0.5;
-	padded[1] = 0.125;
-	padded[2*n - 1] = 0.125;
-	padded[2*n] = 0.125;
-	padded[(2 * n) * (2 * n - 1)] = 0.125;
-
-	rfft2(padded, kern_fft, 2 * n, scratch);
-
-	for (size_t i = 0; i < n; i++) {
-		std::copy_n(src + (i*n), n, padded + (i*n*2));
-	}
-
-	rfft2(padded, src_fft, 2 * n, scratch);
-
-	//#pragma omp parallel
-	{
-		//#pragma omp for
-		for (size_t i = 0; i < 4 * n * n; i++) {
-			src_fft[i] *= kern_fft[i];
-		}
-
-		// reuse kern_fft
-		//#pragma omp single
-		ifft2(src_fft, kern_fft, 2 * n, scratch);
-		
-		//#pragma omp for
-		for (size_t row = 1; row < n-1; row++) {
-			//#pragma omp simd
-			for (size_t col = 1; col < n-1; col++) {
-				dst[n * row + col] = kern_fft[2 * n * row + col].real();
-			}
-		}
-
-		// sides
-		//#pragma omp for
-		for (size_t i = 1; i < n - 1; i++) {
-			dst[i*n] = src[i*n];
-			dst[(i+1) * n - 1] = src[(i+1) * n - 1];
-		}
-	}
-
-	// top and bottom
-	std::copy_n(src, n, dst);
-	std::copy_n(src + n * (n-1), n, dst + n * (n-1));
-	
-	delete [] padded;
-	delete [] kern_fft;
-	delete [] src_fft;
-	delete [] scratch;
-}
-
+// NOTE: i know this is slow af for small grids, but i didn't feel like writing
+// the generic nested loop thing just for small grids that don't matter anyway
 void apply_stencil(const Grid& old_grid, Grid& new_grid) {
-	const size_t rows = old_grid.rows_;
-	const size_t cols = old_grid.cols_;
+	size_t full_n = new_grid.pad_n;
+	size_t rows = new_grid.rows;
+	size_t cols = new_grid.cols;
+	
+	double * dst = new_grid.data;
+	double * src = old_grid.data;
 
-	// convenience
-	const vector<double>& old_data = old_grid.data;
-	vector<double>& new_data = new_grid.data;
+	complex * scratch = old_grid.scratch1;
+	complex * kern_fft = new_grid.scratch1;
+	complex * src_fft = new_grid.scratch2;
 
-	// only do the fft thing if we have a std::power-of-2 square grid. other grids
-	// could be padded to do the same thing, but i can't be bothered because the
-	// benchmark is on a 1024x1024 grid :)
-	if (rows != cols || rows & (rows - 1) || cols & (cols - 1)) {
-		boring_stencil(old_data, new_data, rows, cols);
-	} else {
-		
+	// fft kern and src matrix
+	rfft2(old_grid.kernel, kern_fft, full_n, scratch);
+	rfft2(src, src_fft, full_n, scratch);
+
+	#pragma omp parallel for
+	for (size_t i = 0; i < full_n * full_n; i++) { src_fft[i] *= kern_fft[i]; }
+
+	// reuse kern_fft, ifft
+	ifft2(src_fft, kern_fft, full_n, scratch);
+	
+	// copy only middle part
+	// i wish there was a good map function or something
+	#pragma omp parallel for
+	for (size_t row = 1; row < rows-1; row++) {
+		for (size_t col = 1; col < cols-1; col++) {
+			dst[full_n * row + col] = kern_fft[full_n * row + col].real();
+		}
 	}
+
+	// copy sides
+	// TODO: find a way to skip this part after the first loop?
+	// since they stay the same
+	#pragma omp parallel for
+	for (size_t row = 1; row < rows - 1; row++) {
+		dst[full_n * row] = src[full_n * row];
+		dst[(row+1) * full_n - 1] = src[(row+1) * full_n - 1];
+	}
+
+	// copy top and bottom
+	std::copy_n(dst, cols, src);
+	std::copy_n(dst + full_n * (rows-1), cols, src + full_n * (rows-1));
 }
