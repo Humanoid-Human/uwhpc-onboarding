@@ -22,8 +22,8 @@ class Grid {
 	public:
 	Grid(size_t r, size_t c): rows{r}, cols{c} {
 		// padding for fft (next power of 2)
-		pad_n = (r < c ? c : r)--;
-		for (size_t shift = 1; shift < sizeof(size_t) * CHAR_BIT; shift *= 2) {
+		pad_n = (r < c ? c : r) + 1; // would be -1 but kernel is 3-wide so +2 on top
+		for (size_t shift = 1; shift < sizeof(size_t) * CHAR_BIT; shift++) {
 			pad_n |= pad_n >> shift;
 		}
 		pad_n++;
@@ -59,131 +59,149 @@ class Grid {
 };
 
 void transpose(complex *m, size_t n, size_t full_n) {
-	// base case
-	if (n == 2) {
-		complex tmp = m[1];
-		m[1] = m[full_n];
-		m[full_n] = tmp;
+	if (n <= 8) {
+		#pragma omp simd
+		for (size_t row = 0; row < n; row++) {
+			#pragma omp simd
+			for (size_t col = row + 1; col < n; col++) {
+				std::swap(m[row * full_n + col], m[col * full_n + row]);
+			}
+		}
 		return;
 	}
 
-	#pragma omp parallel
-	{
-		// transpose four quadrants
-		#pragma omp single
+	if (n >= 512) {
+		#pragma omp parallel
 		{
-			#pragma omp task
-			transpose(m, n/2, full_n);
-			#pragma omp task
-			transpose(m + n/2, n/2, full_n);
-			#pragma omp task
-			transpose(m + (full_n * n/2), n/2, full_n);
-			#pragma omp task
-			transpose(m + (full_n * n/2) + (n/2), n/2, full_n);
-		}
+			#pragma omp for
+			for (size_t i = 0; i < (full_n * n / 2); i += full_n) {
+				std::swap_ranges(m + i + (n/2), m + i + n, m + (full_n * n / 2) + i);
+			}
 
-		// swap top-right and bottom-left quadrants
-		#pragma omp for
+			#pragma omp single
+			{
+				#pragma omp task
+				transpose(m, n/2, full_n);
+				#pragma omp task
+				transpose(m + n/2, n/2, full_n);
+				#pragma omp task
+				transpose(m + (full_n * n/2), n/2, full_n);
+				#pragma omp task
+				transpose(m + (full_n * n/2) + (n/2), n/2, full_n);
+			}
+		}	
+	} else {
+		#pragma omp simd
 		for (size_t i = 0; i < (full_n * n / 2); i += full_n) {
 			std::swap_ranges(m + i + (n/2), m + i + n, m + (full_n * n / 2) + i);
 		}
+
+		transpose(m, n/2, full_n);
+		transpose(m + n/2, n/2, full_n);
+		transpose(m + (full_n * n/2), n/2, full_n);
+		transpose(m + (full_n * n/2) + (n/2), n/2, full_n);
 	}
 }
 
-void transpose(complex *m, size_t n) { transpose(m, n, n); }
+void transpose(complex *m, size_t n) {
+	transpose(m, n, n);
+}
 
 // not parallelised because it will already be in the 2d fft
-void fft(const complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-TAU) {
-	if (n == 1) {
-		*dst = *src;
-		return;
-	}
+void fft(const complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-1) {
+	if (n == 4) {
+		// 4-point butterfly
+		complex lp = src[0];
+		complex lk = src[2 * stride];
+		complex rp = src[stride];
+		complex rk = src[3 * stride];
 
-	fft(src, dst, n / 2, stride * 2, expnt);
-	fft(src + stride, dst + (n/2), n / 2, stride * 2, expnt);
+		complex p1 = lp + lk;
+		complex k1 = rp + rk;
+		complex p2 = lp - lk;
+		complex k2 = (rp - rk) * expnt * complex{0, 1};
 
-	complex w = std::polar(1.0, expnt / n);
-
-	#pragma omp simd
-	for (size_t i = 0; i < n / 2; i++) {
-		complex p = dst[i];
-		complex k = dst[i + (n/2)] * std::pow(w, i);
-		dst[i] = p + k;
-		dst[i + (n/2)] = p - k;
+		dst[0] = p1 + k1;
+		dst[1] = p2 + k2;
+		dst[2] = p1 - k1;
+		dst[3] = p2 - k2;
+	} else if (n == 2) { // safety
+		dst[0] = src[0] + src[stride];
+		dst[1] = src[0] - src[stride];
+	} else {
+		fft(src, dst, n / 2, stride * 2, expnt);
+		fft(src + stride, dst + (n/2), n / 2, stride * 2, expnt);
+		#pragma omp simd
+		for (size_t i = 0; i < n / 2; i++) {
+			complex p = dst[i];
+			complex k = dst[i + (n/2)] * std::polar(1.0, expnt * TAU * i / n);
+			dst[i] = p + k;
+			dst[i + (n/2)] = p - k;
+		}
 	}
 }
 
-void ifft(const complex * src, complex * dst, size_t n) { fft(src, dst, n, 1, TAU); }
+void ifft(const complex * src, complex * dst, size_t n) { fft(src, dst, n, 1, 1); }
 
 void rfft(const double * src, complex * dst, size_t n) {
 	fft(reinterpret_cast<const complex *>(src), dst, n / 2);
 
 	// https://doi.org/10.1016/0022-460X(70)90075-1
-	
+
+	size_t half = n / 2;
+
 	complex first = dst[0];
 	dst[0] = first.real() + first.imag();
-	dst[n / 2] = first.real() - first.imag();
+	dst[half] = first.real() - first.imag();
 
-	complex w = std::polar(1.0, -TAU / n);
+	#pragma omp simd
 	for (size_t i = 1; i <= n / 4; i++) {
-		complex a1 = 0.5 * (dst[i] + std::conj(dst[n / 2 - i]));
-		complex a2 = complex(0, 0.5) * std::pow(w, i) * (std::conj(dst[n / 2 - i]) - dst[i]);
+		complex a1 = 0.5 * (dst[i] + std::conj(dst[half - i]));
+		complex a2 = complex(0, 0.5) * std::polar(1.0, -TAU * i / n) * (std::conj(dst[half - i]) - dst[i]);
 
-		// according to the paper these should be multiplied by 0.5
-		// i have no idea why but that doesn't agree with scipy's algorithm
 		dst[i] = a1 + a2;
-		dst[(n/2) + i] = a1 - a2;
-		dst[n - i] = std::conj(a1 + a2);
-		dst[(n/2) - i] = std::conj(a1 - a2);
+		dst[half + i] = a1 - a2;
+		dst[n - i] = std::conj(dst[i]);
+		dst[half - i] = std::conj(dst[half + i]);
 	}
 }
 
 // n is side len
 void rfft2(const double * src, complex * dst, size_t n, complex * scratch) {
-	#pragma omp parallel
-	{
-		#pragma omp for
-		for (size_t row = 0; row < n; row++) {
-			rfft(src + (row * n), scratch + (row * n), n);
-		}
-
-		#pragma omp single
-		transpose(scratch, n);
-
-		#pragma omp for
-		for (size_t row = 0; row < n; row++) {
-			fft(scratch + (row * n), dst + (row * n), n);
-		}
-		
-		#pragma omp single
-		transpose(dst, n);
+	#pragma omp parallel for
+	for (size_t row = 0; row < n; row++) {
+		rfft(src + (row * n), scratch + (row * n), n);
 	}
+
+	transpose(scratch, n);
+
+	#pragma omp parallel for
+	for (size_t row = 0; row < n; row++) {
+		fft(scratch + (row * n), dst + (row * n), n);
+	}
+	
+	transpose(dst, n);
 }
 
 void ifft2(const complex * src, complex * dst, size_t n, complex * scratch) {
-	#pragma omp parallel
-	{
-		#pragma omp for
-		for (size_t row = 0; row < n; row++) {
-			ifft(src + (row * n), scratch + (row * n), n);
-		}
-
-		#pragma omp single
-		transpose(scratch, n);
-
-		#pragma omp for
-		for (size_t row = 0; row < n; row++) {
-			ifft(scratch + (row * n), dst + (row * n), n);
-		}
-
-		#pragma omp single
-		transpose(dst, n);
-
-		#pragma omp for
-		for (size_t i = 0; i < n * n; i++) {
-			dst[i] /= n * n;
-		}
+	#pragma omp parallel for
+	for (size_t row = 0; row < n; row++) {
+		ifft(src + (row * n), scratch + (row * n), n);
 	}
+
+	transpose(scratch, n);
+
+	#pragma omp parallel for
+	for (size_t row = 0; row < n; row++) {
+		ifft(scratch + (row * n), dst + (row * n), n);
+	}
+
+	transpose(dst, n);
+
+	size_t len = n * n;
+	complex div = 1.0 / len;
+	#pragma omp simd
+	for (size_t i = 0; i < len; i++) { dst[i] *= div; }
 }
 
 // TODO:
@@ -209,16 +227,16 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
 	rfft2(old_grid.kernel, kern_fft, full_n, scratch);
 	rfft2(src, src_fft, full_n, scratch);
 
-	#pragma omp parallel for
+	#pragma omp simd
 	for (size_t i = 0; i < full_n * full_n; i++) { src_fft[i] *= kern_fft[i]; }
 
 	// reuse kern_fft, ifft
 	ifft2(src_fft, kern_fft, full_n, scratch);
 	
 	// copy only middle part
-	// i wish there was a good map function or something
 	#pragma omp parallel for
 	for (size_t row = 1; row < rows-1; row++) {
+		#pragma omp simd
 		for (size_t col = 1; col < cols-1; col++) {
 			dst[full_n * row + col] = kern_fft[full_n * row + col].real();
 		}

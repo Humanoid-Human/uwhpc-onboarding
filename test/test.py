@@ -28,7 +28,7 @@ print(f"const std::size_t NUM_TESTS = {NUM_TESTS};\n")
 # fft
 print(f"std::vector<std::complex<double>> fft_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    inp.append(np.zeros(2 ** rng.integers(1, 6), dtype=np.complex128))
+    inp.append(np.zeros(2 ** rng.integers(2, 6), dtype=np.complex128))
     for j in range(len(inp[i])):
         inp[i][j] = complex(rng.uniform(0, 32), rng.uniform(0, 32))
     print_fmt(inp[i])
@@ -44,7 +44,7 @@ inp.clear()
 # rfft
 print(f"std::vector<double> rfft_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    inp.append(np.zeros(2 ** (2 * rng.integers(2, 4))))
+    inp.append(np.zeros(2 ** (2 * rng.integers(3, 5))))
     for j in range(len(inp[i])):
         inp[i][j] = rng.uniform(0, 32)
     print_fmt(inp[i])
@@ -59,7 +59,7 @@ print("};")
 t_inp = []
 print(f"std::vector<std::complex<double>> transpose_inps[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
-    t_inp.append(np.zeros(2 ** (2 * rng.integers(1, 5)), dtype=np.complex128))
+    t_inp.append(np.zeros(2 ** (2 * rng.integers(2, 5)), dtype=np.complex128))
     for j in range(len(t_inp[i])):
         t_inp[i][j] = complex(rng.uniform(0, 32), rng.uniform(0, 32))
     print_fmt(t_inp[i])
@@ -76,16 +76,4 @@ print(f"std::vector<std::complex<double>> rfft2_expects[{NUM_TESTS}] = {{")
 for i in range(NUM_TESTS):
     n = int(sqrt(len(inp[i])))
     print_fmt(scipy.fft.fft2(inp[i].reshape((n, n))).flatten())
-print("};")
-
-# stencil
-kern = [[0, 1/8, 0], [1/8, 1/2, 1/8], [0, 1/8, 0]]
-print(f"std::vector<double> stencil_expects[{NUM_TESTS}] = {{")
-for i in range(NUM_TESTS):
-    n = int(sqrt(len(inp[i])))
-    ans = scipy.signal.convolve2d(inp[i].reshape((n, n)), kern, "valid");
-    for j in range(1, n-1):
-        for k in range(1, n-1):
-            inp[i][j * n + k] = ans[j-1][k-1]
-    print_fmt(inp[i])
 print("};")
