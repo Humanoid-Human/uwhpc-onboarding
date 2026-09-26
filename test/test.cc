@@ -119,12 +119,13 @@ void test_transpose() {
 
 void test_rfft2() {
 	std::size_t pass = NUM_TESTS;
-	auto res = new complex[256];
+	std::vector<complex> res(256);
 	auto scratch = new complex[256];
 
 	for (std::size_t i = 0; i < NUM_TESTS; i++) {
 		std::size_t n = sqrt(rfft_inps[i].size());
-		rfft2(rfft_inps[i].data(), res, n, scratch);
+		rfft2(rfft_inps[i], res, n, n, scratch);
+		transpose(res.data(), n);
 
 		for (size_t j = 0; j < n * n; j++) {
 			if (far_apart(res[j], rfft2_expects[i][j])) {
@@ -138,19 +139,19 @@ void test_rfft2() {
 	}
 	std::cout << pass << "/" << NUM_TESTS << " rfft2 tests passed" << std::endl;
 
-	delete [] res;
 	delete [] scratch;
 }
 
 void test_ifft2() {
 	std::size_t pass = NUM_TESTS;
-	auto res = new complex[256];
+	std::vector<complex> res(256);
 	auto scratch = new complex[256];
 	
 	for (std::size_t i = 1; i < NUM_TESTS; i++) {
 		std::size_t n = sqrt(rfft2_expects[i].size());
+		ifft2(rfft2_expects[i], res, n, n, scratch);
+		transpose(res.data(), n);
 
-		ifft2(rfft2_expects[i].data(), res, n, scratch);
 		for (size_t j = 0; j < n * n; j++) {
 			if (far_apart(rfft_inps[i][j], res[j])) {
 				std::cout << "[FAIL] (ifft2 " << i << ") at index " << j << " (len " << n * n
@@ -163,6 +164,5 @@ void test_ifft2() {
 	}
 	std::cout << pass << "/" << NUM_TESTS << " ifft2 tests passed" << std::endl;
 
-	delete [] res;
 	delete [] scratch;
 }
