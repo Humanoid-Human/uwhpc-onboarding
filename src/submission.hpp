@@ -4,6 +4,7 @@
 #include <complex>
 #include <vector>
 
+// for convenience
 using std::size_t, std::vector;
 using complex = std::complex<double>;
 
@@ -16,26 +17,28 @@ class Grid {
 	size_t cols;
 	size_t pad_n;
 
+	vector<double> data;
 	vector<complex> kern_fft;
 	mutable vector<complex> scratch1;
 	mutable vector<complex> scratch2;
 
 	public:
-	vector<double> data;
 	Grid(size_t r, size_t c): rows{r}, cols{c} {
 		// padding for fft (next power of 2)
 		pad_n = (r < c ? c : r) + 1; // would be -1 but kernel is 3-wide so +2 on top
 		for (size_t s = pad_n >> 1; s != 0; s >>= 1) { pad_n |= s; }
 		pad_n++;
 
+		// this doesn't actually have to be square, since the dimensions just have to be powers of 2
+		// but non-square transpose algorithms are more complicated
 		size_t data_size = pad_n * pad_n;
 		data = vector<double>(data_size, 0);
 
-		// scratch arrays & kernel, so main thing doesnt have to allocate
-		// TODO: find a way to not allocate so much memory?
+		// scratch arrays so apply_stencil doesnt have to allocate
 		scratch1 = vector<complex>(data_size);
 		scratch2 = vector<complex>(data_size);
 
+		// precompute kernel fft bc it's constant
 		vector<double> kernel(data_size, 0);
 		kernel[0] = 0.5;
 		kernel[1] = 0.125;
@@ -53,6 +56,8 @@ class Grid {
 	friend void apply_stencil(const Grid& old_, Grid& new_);
 };
 
+// best thresholds for parallelism and base case are probably hardware-dependent
+// idk what the github actions benchmark runs on
 void transpose(complex *m, size_t n, size_t full_n) {
 	if (n <= 8) {
 		#pragma omp simd
@@ -66,11 +71,14 @@ void transpose(complex *m, size_t n, size_t full_n) {
 	}
 
 	if (n >= 512) {
+		// swapping the top right/bottom left quadrants
 		#pragma omp parallel for
 		for (size_t i = 0; i < (full_n * n / 2); i += full_n) {
 			std::swap_ranges(m + i + (n/2), m + i + n, m + (full_n * n / 2) + i);
 		}
 
+		// unsure if this actually does anything,
+		// documentation on omp orphan directives is pretty sparse
 		#pragma omp task
 		transpose(m, n/2, full_n);
 		#pragma omp task
@@ -92,14 +100,14 @@ void transpose(complex *m, size_t n, size_t full_n) {
 	}
 }
 
-void transpose(complex *m, size_t n) {
-	transpose(m, n, n);
-}
+void transpose(complex *m, size_t n) { transpose(m, n, n); }
 
 // not parallelised because it will already be in the 2d fft
 void fft(const complex *src, complex *dst, size_t n, size_t stride=1, double expnt=-1) {
 	if (n == 4) {
 		// 4-point butterfly
+		// there is a way to apply this to the whole thing instead of just base case
+		// ("split-radix" fft) but i am lazy
 		complex lp = src[0];
 		complex lk = src[2 * stride];
 		complex rp = src[stride];
@@ -120,6 +128,7 @@ void fft(const complex *src, complex *dst, size_t n, size_t stride=1, double exp
 	} else {
 		fft(src, dst, n / 2, stride * 2, expnt);
 		fft(src + stride, dst + (n/2), n / 2, stride * 2, expnt);
+
 		#pragma omp simd
 		for (size_t i = 0; i < n / 2; i++) {
 			complex p = dst[i];
@@ -158,6 +167,8 @@ void rfft(const double * src, complex * dst, size_t n) {
 }
 
 // n is side len
+// row-column fft2. vector-radix might have been faster, but this is simpler (i am lazy)
+// and allows the algorithm to skip unnecessary parts
 void rfft2(const vector<double>& src, vector<complex>& dst, size_t n, size_t rows, complex * scratch) {
 	#pragma omp parallel
 	{
@@ -178,8 +189,7 @@ void rfft2(const vector<double>& src, vector<complex>& dst, size_t n, size_t row
 	}
 }
 
-void ifft2(const vector<complex>& src, vector<complex>& dst, size_t n, size_t rows, complex * scratch) {
-	size_t len = n * n;
+void ifft2(const vector<complex>& src, vector<complex>& dst, size_t n, size_t rows, size_t cols, complex * scratch) {
 	#pragma omp parallel
 	{
 		#pragma omp for
@@ -193,38 +203,32 @@ void ifft2(const vector<complex>& src, vector<complex>& dst, size_t n, size_t ro
 		#pragma omp for
 		for (size_t row = 0; row < rows; row++) {
 			ifft(scratch + (row * n), &dst[row * n], n);
+			for (size_t col = 0; col < cols; col++) {
+				dst[row * n + col] /= n * n;
+			}
 		}
-
-		#pragma omp for
-		for (size_t i = 0; i < len; i++) { dst[i] /= len; }
 	}
 }
 
-// TODO:
-// - some way to use less memory in grids? rn they have 4 scratch bufs where only 3 are needed
+// maybe there's some way to use less memory in grids?
+// rn they have 4 scratch bufs where only 3 are needed
+// in-place fft2 could do it but afaik that's slower
 void apply_stencil(const Grid& old_, Grid& new_) {
 	size_t n = new_.pad_n;
 	size_t rows = new_.rows;
 	size_t cols = new_.cols;
 
-	auto src = old_.data.data();
-	auto dst = new_.data.data();
-
-	// fft
 	rfft2(old_.data, new_.scratch1, n, rows, old_.scratch1.data());
 
-	#pragma omp simd
 	for (size_t i = 0; i < n * n; i++) { new_.scratch1[i] *= new_.kern_fft[i]; }
 
-	// ifft
-	ifft2(new_.scratch1, new_.scratch2, n, rows, old_.scratch1.data());
+	ifft2(new_.scratch1, new_.scratch2, n, rows, cols, old_.scratch1.data());
 	
 	#pragma omp parallel
 	{
 		// copy only middle part
 		#pragma omp for
 		for (size_t row = 1; row < rows-1; row++) {
-			#pragma omp simd
 			for (size_t col = 1; col < cols-1; col++) {
 				new_.data[n * row + col] = new_.scratch2[n * row + col].real();
 			}
